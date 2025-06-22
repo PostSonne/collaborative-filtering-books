@@ -155,6 +155,84 @@ function updateBookMetaData() {
     });
 }
 
+function buildBookVectors() {
+    const bookRatings = {};
+
+    trainRatings.forEach(({ userId, bookId, rating }) => {
+        if (!bookRatings[bookId]) bookRatings[bookId] = {};
+        bookRatings[bookId][userId] = rating;
+    });
+
+    Object.entries(bookRatings).forEach(([bookId, userRatings]) => {
+        bookVectors[bookId] = userRatings;
+    });
+}
+
+function cosineSimilarity(v1, v2) {
+    const users = new Set([...Object.keys(v1), ...Object.keys(v2)]);
+    const vec1 = [];
+    const vec2 = [];
+
+    users.forEach(user => {
+        vec1.push(v1[user] || 0);
+        vec2.push(v2[user] || 0);
+    });
+
+    const dotProduct = math.dot(vec1, vec2);
+    const norm1 = math.norm(vec1);
+    const norm2 = math.norm(vec2);
+
+    return (norm1 && norm2) ? dotProduct / (norm1 * norm2) : 0;
+}
+
+function computeSimilarityMatrixParallel() {
+    return new Promise((resolve, reject) => {
+        const cpuCount = os.cpus().length;
+        const allBooks = Object.keys(bookVectors);
+        const chunkSize = Math.ceil(allBooks.length / cpuCount);
+        const chunks = [];
+
+        for (let i = 0; i < allBooks.length; i += chunkSize) {
+            chunks.push(allBooks.slice(i, i + chunkSize));
+        }
+
+        const results = [];
+        let completed = 0;
+
+        chunks.forEach((booksChunk, i) => {
+            const worker = new Worker('./similarityWorker.js', {
+                workerData: {
+                    booksChunk,
+                    bookVectors,
+                    bookMetadata
+                }
+            });
+
+            worker.on('message', (data) => {
+                if (data.type === 'log') {
+                    console.log(`[Worker] ${data.msg}`);
+                } else {
+                    results.push(data);
+                    completed++;
+                    if (completed === chunks.length) {
+                        // Merge all parts
+                        similarityMatrix = Object.assign({}, ...results);
+                        fs.writeFileSync('similarities07.json', JSON.stringify(similarityMatrix));
+                        console.log('Similarity matrix built in parallel.');
+                        resolve();
+                    }
+                }
+            });
+
+            worker.on('error', reject);
+            worker.on('exit', (code) => {
+                if (code !== 0)
+                    reject(new Error(`Worker stopped with exit code ${code}`));
+            });
+        });
+    });
+}
+
 app.use(cors());
 
 (async () => {
@@ -163,6 +241,9 @@ app.use(cors());
     await loadAuthorsData();
     await updateBookMetaData();
     await loadAndSplitRatings();
+
+    //buildBookVectors();
+    //await computeSimilarityMatrixParallel();
 })();
 
 app.listen(PORT, () => {
