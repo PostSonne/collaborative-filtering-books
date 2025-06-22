@@ -25,13 +25,11 @@ function loadAndSplitRatings() {
             .on('end', () => {
                 const userRatingsMap = {};
 
-                // Group all ratings by user
                 allRatings.forEach(({ userId, bookId, rating }) => {
                     if (!userRatingsMap[userId]) userRatingsMap[userId] = [];
                     userRatingsMap[userId].push({ bookId, rating });
                 });
 
-                // Split each user's ratings
                 Object.entries(userRatingsMap).forEach(([userId, ratings]) => {
                     if (ratings.length < 2) return; // Skip users with < 2 ratings
 
@@ -63,9 +61,107 @@ function loadAndSplitRatings() {
     });
 }
 
+function loadBookMetaData() {
+    return new Promise((resolve, reject) => {
+        fs.readFile('bookMetadata.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
+
+            try {
+                bookMetadata = JSON.parse(data);
+                fullBookMetadata = JSON.parse(data);
+
+                bookMetadata = Object.fromEntries(
+                    Object.entries(bookMetadata).filter(([bookId, book]) =>
+                        book.country?.some(c => c !== null)
+                    )
+                );
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
+    });
+}
+
+function loadAuthorsData() {
+    return new Promise((resolve, reject) => {
+        fs.readFile('authors.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
+
+            try {
+                authors = JSON.parse(data);
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
+    });
+}
+
+function updateBookMetaData() {
+    return new Promise((resolve, reject) => {
+        fs.createReadStream('books.csv')
+            .pipe(csv())
+            .on('data', (row) => {
+                const id = row['id'];
+                const authors = row['authors'];
+                const title = row['original_title'];
+                const titleAlt = row['title'];
+                const image_url = row['image_url'];
+                const average_rating = row['average_rating'];
+                bookMetadata[id] = {authors: authors, originalTitle: title || titleAlt, image: image_url, average_rating: average_rating};
+            })
+            .on('end', async () => {
+                const allBooks = Object.keys(bookMetadata);
+
+                for (let i = 0; i < allBooks.length; i++) {
+                    const bookId = allBooks[i];
+                    const {authors: authorStr} = bookMetadata[bookId];
+                    const names = authorStr.split(',').map(name => name.trim());
+
+                    const allKnown = names.every(name => authors[name]?.country !== undefined);
+                    if (allKnown) {
+                        bookMetadata[bookId].country = names.map(name => authors[name].country);
+                        fs.writeFileSync('bookMetadata.json', JSON.stringify(bookMetadata, null, 2));
+                        console.log(`Skipped ${bookId} (cached)`);
+                        continue;
+                    }
+
+                    try {
+                        const res = await getCountriesForAuthors(authorStr);
+                        bookMetadata[bookId].country = res.countries;
+
+                        names.forEach((name, idx) => {
+                            authors[name] = {country: res.countries[idx]};
+                        });
+
+                        fs.writeFileSync('bookMetadata.json', JSON.stringify(bookMetadata, null, 2));
+                        fs.writeFileSync('authors.json', JSON.stringify(authors, null, 2));
+
+                        console.log(`Processed: ${bookId}`);
+                    } catch (err) {
+                        console.error(`Error processing ${bookId}: ${err.message}`);
+                    }
+
+                }
+                resolve();
+            });
+    });
+}
+
 app.use(cors());
 
 (async () => {
+    await loadAndSplitRatings();
+    await loadBookMetaData();
+    await loadAuthorsData();
+    await updateBookMetaData();
     await loadAndSplitRatings();
 })();
 
