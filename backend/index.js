@@ -11,6 +11,12 @@ let testRatings = [];
 
 let userBookTrain = {};
 let userBookTest = {};
+let bookVectors = {};
+let similarityMatrix = {};
+let similarityWithoutMatrix = {};
+let bookMetadata = {};
+let fullBookMetadata = {};
+let authors = {};
 
 function loadAndSplitRatings() {
     return new Promise((resolve, reject) => {
@@ -233,6 +239,75 @@ function computeSimilarityMatrixParallel() {
     });
 }
 
+function evaluatePredictions(userId, matrix = similarityMatrix) {
+    const userTestRatings = testRatings.filter(r => r.userId === userId);
+    const results = {
+        predictions: [],
+        recommended: [],
+        recommendedWithout: []
+    };
+
+    userTestRatings.filter(({ bookId }) => {
+        const countries = bookMetadata[bookId]?.country;
+        return Array.isArray(countries) && countries.some(c => c !== null);
+    }).forEach(({ bookId, rating }) => {
+        const predicted = predictRating(userId, bookId, matrix);
+        if (predicted !== null) {
+            results.predictions.push({
+                bookId,
+                title: bookMetadata[bookId]?.originalTitle ||  'Unknown Title',
+                actualRating: rating,
+                predictedRating: parseFloat(predicted.toFixed(2)),
+                country: bookMetadata[bookId]?.country,
+                image: bookMetadata[bookId].image
+            });
+        }
+    });
+
+    const ratedBooks = new Set(Object.keys(userBookTrain[userId] || {}));
+    const allBooks = Object.keys(bookMetadata);
+
+    const predictionsForUnrated = [];
+    const predictionsForUnratedWithout = [];
+
+    allBooks.filter( bookId  => {
+        const countries = bookMetadata[bookId]?.country;
+        return Array.isArray(countries) && countries.some(c => c !== null);
+    }).forEach(bookId => {
+        if (!ratedBooks.has(bookId)) {
+            const predicted = predictRating(userId, bookId, matrix);
+            const predictedWithout = predictRating(userId, bookId, similarityWithoutMatrix);
+            if (predicted !== null) {
+                predictionsForUnrated.push({
+                    bookId,
+                    title: bookMetadata[bookId]?.originalTitle || 'Unknown Title',
+                    predictedRating: parseFloat(predicted.toFixed(2)),
+                    country: bookMetadata[bookId]?.country,
+                    image: bookMetadata[bookId].image
+                });
+            }
+
+            if (predictedWithout !== null) {
+                predictionsForUnratedWithout.push({
+                    bookId,
+                    title: bookMetadata[bookId]?.originalTitle || 'Unknown Title',
+                    predictedRating: parseFloat(predictedWithout.toFixed(2)),
+                    country: bookMetadata[bookId]?.country,
+                    image: bookMetadata[bookId].image
+                });
+            }
+        }
+    });
+
+    // Sort by predicted rating descending and take top 10
+    predictionsForUnrated.sort((a, b) => b.predictedRating - a.predictedRating);
+    predictionsForUnratedWithout.sort((a, b) => b.predictedRating - a.predictedRating);
+    results.recommended = predictionsForUnrated.slice(0, 20);
+    results.recommendedWithout = predictionsForUnratedWithout.slice(0, 20);
+
+    return results;
+}
+
 app.use(cors());
 
 (async () => {
@@ -245,6 +320,12 @@ app.use(cors());
     //buildBookVectors();
     //await computeSimilarityMatrixParallel();
 })();
+
+app.get('/predict/:userId', (req, res) => {
+    const userId = req.params.userId;
+    const predictions = evaluatePredictions(userId);
+    res.json(predictions);
+});
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
