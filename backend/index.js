@@ -1,6 +1,10 @@
 const express = require('express');
 const fs = require('fs');
 const csv = require('csv-parser');
+const math = require('mathjs');
+const { Worker } = require('worker_threads');
+const { getCountriesForAuthors } = require('./authorCountry');
+const os = require('os');
 const app = express();
 const cors = require('cors');
 const PORT = 3001;
@@ -13,57 +17,80 @@ let userBookTrain = {};
 let userBookTest = {};
 let bookVectors = {};
 let similarityMatrix = {};
+let similarityMatrix07 = {};
 let similarityWithoutMatrix = {};
 let bookMetadata = {};
 let fullBookMetadata = {};
 let authors = {};
 
-function loadAndSplitRatings() {
+app.use(cors());
+
+function loadSimilarityMatrix() {
     return new Promise((resolve, reject) => {
-        fs.createReadStream('ratings.csv')
-            .pipe(csv())
-            .on('data', (row) => {
-                const userId = row['user_id'];
-                const bookId = row['book_id'];
-                const rating = parseFloat(row['rating']);
-                allRatings.push({ userId, bookId, rating });
-            })
-            .on('end', () => {
-                const userRatingsMap = {};
+        fs.readFile('similarities08.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
 
-                allRatings.forEach(({ userId, bookId, rating }) => {
-                    if (!userRatingsMap[userId]) userRatingsMap[userId] = [];
-                    userRatingsMap[userId].push({ bookId, rating });
-                });
+            try {
+                similarityMatrix = JSON.parse(data);
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
+    });
+}
+function loadSimilarityMatrix08() {
+    return new Promise((resolve, reject) => {
+        fs.readFile('similarities08.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
 
-                Object.entries(userRatingsMap).forEach(([userId, ratings]) => {
-                    if (ratings.length < 2) return; // Skip users with < 2 ratings
+            try {
+                similarityMatrix = JSON.parse(data);
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
+    });
+}
+function loadSimilarityMatrix07() {
+    return new Promise((resolve, reject) => {
+        fs.readFile('similarities07.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
 
-                    const shuffled = ratings.sort(() => Math.random() - 0.5);
-                    const splitIdx = Math.floor(shuffled.length * 0.8);
-                    const trainSet = shuffled.slice(0, splitIdx);
-                    const testSet = shuffled.slice(splitIdx);
+            try {
+                similarityMatrix07 = JSON.parse(data);
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
+    });
+}
+function loadSimilarityWithoutMatrix() {
+    return new Promise((resolve, reject) => {
+        fs.readFile('similaritiesWithout.json', 'utf8', (err, data) => {
+            if (err) {
+                console.error('Error reading the file:', err);
+                return;
+            }
 
-                    trainSet.forEach(({ bookId, rating }) => {
-                        if (!userBookTrain[userId]) userBookTrain[userId] = {};
-                        userBookTrain[userId][bookId] = rating;
-                        trainRatings.push({ userId, bookId, rating });
-                    });
-
-                    testSet.forEach(({ bookId, rating }) => {
-                        if (!userBookTest[userId]) userBookTest[userId] = {};
-                        userBookTest[userId][bookId] = rating;
-                        testRatings.push({ userId, bookId, rating });
-                    });
-                });
-
-                fs.writeFileSync('userBookTrain.json', JSON.stringify(userBookTrain));
-                fs.writeFileSync('trainRatings.json', JSON.stringify(trainRatings));
-                fs.writeFileSync('userBookTest.json', JSON.stringify(userBookTest));
-                fs.writeFileSync('testRatings.json', JSON.stringify(testRatings));
-
-                resolve();
-            });
+            try {
+                similarityWithoutMatrix = JSON.parse(data);
+            } catch (parseErr) {
+                console.error('Error parsing JSON:', parseErr);
+            }
+            resolve();
+        });
     });
 }
 
@@ -161,6 +188,55 @@ function updateBookMetaData() {
     });
 }
 
+function loadAndSplitRatings() {
+    return new Promise((resolve, reject) => {
+        fs.createReadStream('ratings.csv')
+            .pipe(csv())
+            .on('data', (row) => {
+                const userId = row['user_id'];
+                const bookId = row['book_id'];
+                const rating = parseFloat(row['rating']);
+                allRatings.push({ userId, bookId, rating });
+            })
+            .on('end', () => {
+                const userRatingsMap = {};
+
+                allRatings.forEach(({ userId, bookId, rating }) => {
+                    if (!userRatingsMap[userId]) userRatingsMap[userId] = [];
+                    userRatingsMap[userId].push({ bookId, rating });
+                });
+
+                Object.entries(userRatingsMap).forEach(([userId, ratings]) => {
+                    if (ratings.length < 2) return; // Skip users with < 2 ratings
+
+                    const shuffled = ratings.sort(() => Math.random() - 0.5);
+                    const splitIdx = Math.floor(shuffled.length * 0.8);
+                    const trainSet = shuffled.slice(0, splitIdx);
+                    const testSet = shuffled.slice(splitIdx);
+
+                    trainSet.forEach(({ bookId, rating }) => {
+                        if (!userBookTrain[userId]) userBookTrain[userId] = {};
+                        userBookTrain[userId][bookId] = rating;
+                        trainRatings.push({ userId, bookId, rating });
+                    });
+
+                    testSet.forEach(({ bookId, rating }) => {
+                        if (!userBookTest[userId]) userBookTest[userId] = {};
+                        userBookTest[userId][bookId] = rating;
+                        testRatings.push({ userId, bookId, rating });
+                    });
+                });
+
+                fs.writeFileSync('userBookTrain.json', JSON.stringify(userBookTrain));
+                fs.writeFileSync('trainRatings.json', JSON.stringify(trainRatings));
+                fs.writeFileSync('userBookTest.json', JSON.stringify(userBookTest));
+                fs.writeFileSync('testRatings.json', JSON.stringify(testRatings));
+
+                resolve();
+            });
+    });
+}
+
 function buildBookVectors() {
     const bookRatings = {};
 
@@ -221,7 +297,6 @@ function computeSimilarityMatrixParallel() {
                     results.push(data);
                     completed++;
                     if (completed === chunks.length) {
-                        // Merge all parts
                         similarityMatrix = Object.assign({}, ...results);
                         fs.writeFileSync('similarities07.json', JSON.stringify(similarityMatrix));
                         console.log('Similarity matrix built in parallel.');
@@ -237,6 +312,46 @@ function computeSimilarityMatrixParallel() {
             });
         });
     });
+}
+
+function predictRating(userId, targetBookId, matrix = similarityMatrix) {
+    const ratedBooks = userBookTrain[userId];
+    if (!ratedBooks) return null;
+
+    const similarities = matrix[targetBookId];
+    if (!similarities) return null;
+
+    let numerator = 0;
+    let denominator = 0;
+    let i = 0;
+    let count = 0;
+
+    const ratedSimilarities = Object.entries(ratedBooks)
+        .map(([bookId, rating]) => {
+            const sim = similarities[bookId];
+            return (sim !== undefined)
+                //? { bookId, sim, ratingDiff: rating - Number(itemAvg) }
+                ? { bookId, sim, rating: rating }
+                : null;
+        })
+        .filter(Boolean);
+
+    const k = 20;
+    const topK = ratedSimilarities
+        .sort((a, b) => Math.abs(b.sim) - Math.abs(a.sim))
+        .slice(0, k);
+
+    topK.forEach(({ sim, rating }) => {
+        numerator += sim * rating;
+        denominator += Math.abs(sim);
+    });
+
+    if (topK.length < 3) return null;
+
+    const rawPrediction = numerator / denominator;
+    //const prediction = Math.max(0, Math.min(5, rawPrediction)); // clamp
+
+    return rawPrediction;
 }
 
 function evaluatePredictions(userId, matrix = similarityMatrix) {
@@ -299,7 +414,6 @@ function evaluatePredictions(userId, matrix = similarityMatrix) {
         }
     });
 
-    // Sort by predicted rating descending and take top 10
     predictionsForUnrated.sort((a, b) => b.predictedRating - a.predictedRating);
     predictionsForUnratedWithout.sort((a, b) => b.predictedRating - a.predictedRating);
     results.recommended = predictionsForUnrated.slice(0, 20);
@@ -308,17 +422,18 @@ function evaluatePredictions(userId, matrix = similarityMatrix) {
     return results;
 }
 
-app.use(cors());
-
+// Prepare model
 (async () => {
     await loadAndSplitRatings();
     await loadBookMetaData();
     await loadAuthorsData();
-    await updateBookMetaData();
-    await loadAndSplitRatings();
-
+    await loadSimilarityMatrix();
+    await loadSimilarityMatrix07();
+    await loadSimilarityWithoutMatrix();
+    //await updateBookMetaData();
     //buildBookVectors();
     //await computeSimilarityMatrixParallel();
+    console.log('Model is trained using 80% data');
 })();
 
 app.get('/predict/:userId', (req, res) => {
@@ -327,46 +442,44 @@ app.get('/predict/:userId', (req, res) => {
     res.json(predictions);
 });
 
-function predictRating(userId, targetBookId, matrix = similarityMatrix) {
-    const ratedBooks = userBookTrain[userId];
-    if (!ratedBooks) return null;
+app.get('/predict07/:userId', (req, res) => {
+    const userId = req.params.userId;
+    const predictions = evaluatePredictions(userId, similarityMatrix07);
+    res.json(predictions);
+});
 
-    const similarities = matrix[targetBookId];
-    if (!similarities) return null;
+app.get('/ratings', (req, res) => {
+    const userCounts = {};
 
-    let numerator = 0;
-    let denominator = 0;
-    let i = 0;
-    let count = 0;
-
-    const ratedSimilarities = Object.entries(ratedBooks)
-        .map(([bookId, rating]) => {
-            const sim = similarities[bookId];
-            //const itemAvg = fullBookMetadata[bookId]?.average_rating;
-            return (sim !== undefined)
-                //? { bookId, sim, ratingDiff: rating - Number(itemAvg) }
-                ? { bookId, sim, rating: rating }
-                : null;
-        })
-        .filter(Boolean);
-
-    const k = 20;
-    const topK = ratedSimilarities
-        .sort((a, b) => Math.abs(b.sim) - Math.abs(a.sim))
-        .slice(0, k);
-
-    topK.forEach(({ sim, rating }) => {
-        numerator += sim * rating;
-        denominator += Math.abs(sim);
+    allRatings.forEach(({ userId }) => {
+        if (!userCounts[userId]) userCounts[userId] = 0;
+        userCounts[userId]++;
     });
 
-    if (topK.length < 3) return null;
+    const sortedUserIds = Object.entries(userCounts)
+        .sort((a, b) => b[1] - a[1])  // Sort descending by rating count
+        .map(([userId]) => userId);
 
-    const rawPrediction = numerator / denominator;
-    //const prediction = Math.max(0, Math.min(5, rawPrediction)); // clamp
+    res.json(sortedUserIds.slice(0, 20));
+});
 
-    return rawPrediction;
-}
+app.get('/countries', (req, res) => {
+    const countriesCount = {};
+
+    for (const book of Object.values(bookMetadata)) {
+        const countries = book.country || [];
+        for (const country of countries) {
+            if (!countriesCount[country]) countriesCount[country] = 0;
+            countriesCount[country]++;
+        }
+    }
+
+    const sorted = Object.entries(countriesCount)
+        .sort((a, b) => b[1] - a[1])  // Sort by count descending
+        .map(([country, count]) => ({ country, count }));
+
+    res.json(sorted);
+});
 
 function evaluateModel(matrix = similarityMatrix) {
     let totalError = 0;
@@ -415,3 +528,4 @@ app.get('/evaluate_without', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
+
