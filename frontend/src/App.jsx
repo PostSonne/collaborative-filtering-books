@@ -31,9 +31,24 @@ function App() {
     const [userId, setUserId] = useState(null);
     const [loggedUser, setLoggedUser] = useState(null);
     const [users, setUsers] = useState([]);
+    const [countries, setCountries] = useState([]);
+    const [modelEval, setModelEval] = useState(null);
+    const [modelEvalWithout, setModelEvalWithout] = useState(null);
+    const [modelEval07, setModelEval07] = useState(null);
     const [books, setBooks] = useState([]);
     const [recommendations, setRecommendations] = useState([]);
     const [recommendationsWithout, setRecommendationsWithout] = useState([]);
+
+    const Item = styled(Paper)(({theme}) => ({
+        backgroundColor: '#fff',
+        ...theme.typography.body2,
+        padding: theme.spacing(1),
+        textAlign: 'center',
+        color: (theme.vars ?? theme).palette.text.secondary,
+        ...theme.applyStyles('dark', {
+            backgroundColor: '#1A2027',
+        }),
+    }));
 
     const selectUser = (event) => {
         setUserId(event.target.value);
@@ -94,6 +109,70 @@ function App() {
         });
     }, []);
 
+    useEffect(() => {
+        axios.get('http://localhost:3001/countries').then(res => {
+            setCountries(res.data);
+        });
+    }, []);
+
+    useEffect(() => {
+        axios.get('http://localhost:3001/evaluate').then(res => {
+            setModelEval(res.data);
+        });
+    }, []);
+    useEffect(() => {
+        axios.get('http://localhost:3001/evaluate_without').then(res => {
+            setModelEvalWithout(res.data);
+        });
+    }, []);
+    useEffect(() => {
+        axios.get('http://localhost:3001/evaluate07').then(res => {
+            setModelEval07(res.data);
+        });
+    }, []);
+
+    const filteredData = countries.filter(d => d.country && d.country !== "null");
+
+    const sorted = [...filteredData].sort((a, b) => b.count - a.count);
+    const top10 = sorted.slice(0, 10);
+
+    const othersCount = sorted.slice(10).reduce((sum, item) => sum + item.count, 0);
+    const dataWithOthers = [...top10];
+    if (othersCount > 0) {
+        dataWithOthers.push({country: "Others", count: othersCount});
+    }
+    console.log(dataWithOthers);
+
+    const COLORS = [
+        '#0088FE', '#00C49F', '#FFBB28', '#FF8042',
+        '#A28CFF', '#FF6E6E', '#82CA9D', '#8884D8',
+        '#FFC658', '#AAFF99', '#999999'
+    ];
+
+    const CountryPieChart = () => (<div className="p-4">
+        <h2 className="text-xl font-bold mb-4">Country Representation (Top 10 + Others)</h2>
+        <div style={{height: 500}}>
+            <ResponsiveContainer>
+                <PieChart>
+                    <Pie
+                        data={dataWithOthers}
+                        dataKey="count"
+                        nameKey="country"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={90}
+                        label
+                    >
+                        {dataWithOthers.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]}/>
+                        ))}
+                    </Pie>
+                    <Tooltip/>
+                    <Legend/>
+                </PieChart>
+            </ResponsiveContainer>
+        </div>
+    </div>);
 
     return (
         <Container maxWidth="lg">
@@ -119,6 +198,47 @@ function App() {
                             <Grid size={12}>
                                 {userCard}
                             </Grid>
+                            <Grid size={9}>
+                                <Grid container spacing={2}>
+                                    <Grid size={4}>
+                                        <CardContent>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 18}}>
+                                                Evaluation of Diversity 0.3
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                MAE: {modelEval07["MAE"]}
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                RMSE: {modelEval07["RMSE"]}
+                                            </Typography>
+                                        </CardContent>
+                                    </Grid>
+                                    <Grid size={4}>
+                                        <CardContent>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 18}}>
+                                                Evaluation of Diversity 0.2
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                MAE: {modelEval["MAE"]}
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                RMSE: {modelEval["RMSE"]}
+                                            </Typography>
+                                        </CardContent>
+                                    </Grid>
+                                    <Grid size={4}>
+                                        <CardContent>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 18}}>
+                                                Evaluation without Diversity
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                MAE: {modelEvalWithout["MAE"]}
+                                            </Typography>
+                                            <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
+                                                RMSE: {modelEvalWithout["RMSE"]}
+                                            </Typography>
+                                        </CardContent>
+                                    </Grid>
                                     <Grid size={4}>
                                         <div>My Rated books:</div>
                                         <List sx={{width: '100%', maxWidth: 360, bgcolor: 'background.paper'}}>
