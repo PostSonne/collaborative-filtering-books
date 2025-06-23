@@ -327,6 +327,91 @@ app.get('/predict/:userId', (req, res) => {
     res.json(predictions);
 });
 
+function predictRating(userId, targetBookId, matrix = similarityMatrix) {
+    const ratedBooks = userBookTrain[userId];
+    if (!ratedBooks) return null;
+
+    const similarities = matrix[targetBookId];
+    if (!similarities) return null;
+
+    let numerator = 0;
+    let denominator = 0;
+    let i = 0;
+    let count = 0;
+
+    const ratedSimilarities = Object.entries(ratedBooks)
+        .map(([bookId, rating]) => {
+            const sim = similarities[bookId];
+            //const itemAvg = fullBookMetadata[bookId]?.average_rating;
+            return (sim !== undefined)
+                //? { bookId, sim, ratingDiff: rating - Number(itemAvg) }
+                ? { bookId, sim, rating: rating }
+                : null;
+        })
+        .filter(Boolean);
+
+    const k = 20;
+    const topK = ratedSimilarities
+        .sort((a, b) => Math.abs(b.sim) - Math.abs(a.sim))
+        .slice(0, k);
+
+    topK.forEach(({ sim, rating }) => {
+        numerator += sim * rating;
+        denominator += Math.abs(sim);
+    });
+
+    if (topK.length < 3) return null;
+
+    const rawPrediction = numerator / denominator;
+    //const prediction = Math.max(0, Math.min(5, rawPrediction)); // clamp
+
+    return rawPrediction;
+}
+
+function evaluateModel(matrix = similarityMatrix) {
+    let totalError = 0;
+    let totalSquaredError = 0;
+    let totalPredictions = 0;
+
+    for (const { userId, bookId, rating: actualRating } of testRatings) {
+        const predicted = predictRating(userId, bookId, matrix);
+
+        if (predicted !== null) {
+            const error = predicted - actualRating;
+            totalError += Math.abs(error);
+            totalSquaredError += error * error;
+            totalPredictions++;
+        }
+    }
+
+    const mae = totalError / totalPredictions;
+    const rmse = Math.sqrt(totalSquaredError / totalPredictions);
+    const coverage = totalPredictions / testRatings.length;
+
+    return {
+        totalPredictions,
+        totalTestRatings: testRatings.length,
+        coverage: parseFloat((coverage * 100).toFixed(2)) + '%',
+        MAE: parseFloat(mae.toFixed(4)),
+        RMSE: parseFloat(rmse.toFixed(4))
+    };
+}
+
+app.get('/evaluate', (req, res) => {
+    const results = evaluateModel();
+    res.json(results);
+});
+
+app.get('/evaluate07', (req, res) => {
+    const results = evaluateModel(similarityMatrix07);
+    res.json(results);
+});
+
+app.get('/evaluate_without', (req, res) => {
+    const results = evaluateModel(similarityWithoutMatrix);
+    res.json(results);
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
