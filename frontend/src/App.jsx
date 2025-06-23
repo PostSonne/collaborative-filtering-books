@@ -206,10 +206,10 @@ function App() {
                                                 Evaluation of Diversity 0.3
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                MAE: {modelEval07["MAE"]}
+                                                MAE: {modelEval07?.MAE}
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                RMSE: {modelEval07["RMSE"]}
+                                                RMSE: {modelEval07?.RMSE}
                                             </Typography>
                                         </CardContent>
                                     </Grid>
@@ -219,10 +219,10 @@ function App() {
                                                 Evaluation of Diversity 0.2
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                MAE: {modelEval["MAE"]}
+                                                MAE: {modelEval?.MAE}
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                RMSE: {modelEval["RMSE"]}
+                                                RMSE: {modelEval?.RMSE}
                                             </Typography>
                                         </CardContent>
                                     </Grid>
@@ -232,10 +232,10 @@ function App() {
                                                 Evaluation without Diversity
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                MAE: {modelEvalWithout["MAE"]}
+                                                MAE: {modelEvalWithout?.MAE}
                                             </Typography>
                                             <Typography gutterBottom sx={{color: 'text.primary', fontSize: 12}}>
-                                                RMSE: {modelEvalWithout["RMSE"]}
+                                                RMSE: {modelEvalWithout?.RMSE}
                                             </Typography>
                                         </CardContent>
                                     </Grid>
