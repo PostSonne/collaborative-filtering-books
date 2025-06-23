@@ -8,6 +8,7 @@ const os = require('os');
 const app = express();
 const cors = require('cors');
 const PORT = 3001;
+const k = 20;
 
 let allRatings = [];
 let trainRatings = [];
@@ -336,7 +337,6 @@ function predictRating(userId, targetBookId, matrix = similarityMatrix) {
         })
         .filter(Boolean);
 
-    const k = 20;
     const topK = ratedSimilarities
         .sort((a, b) => Math.abs(b.sim) - Math.abs(a.sim))
         .slice(0, k);
